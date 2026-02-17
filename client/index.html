@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulse Messenger</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+
+  <!-- ========== ЭКРАН ВХОДА ========== -->
+  <div id="login-screen" class="screen active">
+    <div class="login-container">
+      <div class="login-logo">
+        <div class="logo-icon">
+          <i class="fas fa-bolt"></i>
+        </div>
+        <h1>Pulse</h1>
+        <p>Мессенджер нового поколения</p>
+      </div>
+
+      <form id="login-form" class="login-form">
+        <div class="input-group">
+          <i class="fas fa-user"></i>
+          <input type="text" id="username-input" placeholder="Имя пользователя"
+                 required minlength="2" maxlength="20" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <i class="fas fa-id-card"></i>
+          <input type="text" id="displayname-input" placeholder="Отображаемое имя (необязательно)"
+                 maxlength="30" autocomplete="off">
+        </div>
+        <button type="submit" class="btn-primary">
+          <i class="fas fa-arrow-right"></i>
+          Войти в Pulse
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== ГЛАВНЫЙ ЭКРАН ========== -->
+  <div id="main-screen" class="screen">
+    <div class="app-container">
+
+      <!-- БОКОВАЯ ПАНЕЛЬ -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo-small">
+            <i class="fas fa-bolt"></i>
+            <span>Pulse</span>
+          </div>
+          <button class="btn-icon" id="btn-new-group" title="Создать группу">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+
+        <!-- Поиск -->
+        <div class="search-bar">
+          <i class="fas fa-search"></i>
+          <input type="text" id="search-input" placeholder="Поиск...">
+        </div>
+
+        <!-- Список чатов -->
+        <div class="chat-list" id="chat-list">
+          <!-- Заполняется через JS -->
+        </div>
+
+        <!-- Профиль пользователя внизу -->
+        <div class="sidebar-footer">
+          <div class="user-profile" id="user-profile">
+            <div class="avatar-small" id="my-avatar">
+              <i class="fas fa-user"></i>
+            </div>
+            <div class="user-info">
+              <span class="username" id="my-name">Пользователь</span>
+              <span class="status-text" id="my-status">В сети</span>
+            </div>
+          </div>
+          <button class="btn-icon" id="btn-settings" title="Настройки">
+            <i class="fas fa-cog"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ОСНОВНАЯ ОБЛАСТЬ ЧАТА -->
+      <main class="chat-area">
+        <!-- Заголовок чата -->
+        <header class="chat-header" id="chat-header">
+          <div class="chat-info">
+            <div class="avatar-medium">
+              <i class="fas fa-comments"></i>
+            </div>
+            <div>
+              <h3 id="chat-name">💬 Общий чат</h3>
+              <span class="chat-subtitle" id="chat-subtitle">Выберите чат для начала</span>
+            </div>
+          </div>
+          <div class="chat-actions">
+            <button class="btn-icon" title="Голосовой звонок">
+              <i class="fas fa-phone"></i>
+            </button>
+            <button class="btn-icon" title="Видеозвонок">
+              <i class="fas fa-video"></i>
+            </button>
+            <button class="btn-icon" title="Информация">
+              <i class="fas fa-info-circle"></i>
+            </button>
+          </div>
+        </header>
+
+        <!-- Сообщения -->
+        <div class="messages-container" id="messages-container">
+          <div class="messages-list" id="messages-list">
+            <!-- Сообщения заполняются через JS -->
+          </div>
+        </div>
+
+        <!-- Индикатор печати -->
+        <div class="typing-indicator" id="typing-indicator" style="display: none;">
+          <div class="typing-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="typing-text" id="typing-text">печатает...</span>
+        </div>
+
+        <!-- Панель ввода -->
+        <footer class="message-input-area">
+          <!-- Превью ответа -->
+          <div class="reply-preview" id="reply-preview" style="display: none;">
+            <div class="reply-content">
+              <i class="fas fa-reply"></i>
+              <span id="reply-text"></span>
+            </div>
+            <button class="btn-icon btn-small" id="btn-cancel-reply">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+
+          <div class="input-row">
+            <!-- Кнопка прикрепить файл -->
+            <button class="btn-icon" id="btn-attach" title="Прикрепить файл">
+              <i class="fas fa-paperclip"></i>
+            </button>
+            <input type="file" id="file-input" hidden multiple>
+
+            <!-- Поле ввода -->
+            <div class="message-input-wrapper">
+              <textarea id="message-input" placeholder="Напишите сообщение..."
+                        rows="1" maxlength="5000"></textarea>
+            </div>
+
+            <!-- 🔊 КНОПКА ВЫБОРА ЗВУКА (УНИКАЛЬНАЯ ФИШКА!) -->
+            <div class="sound-selector" id="sound-selector">
+              <button class="btn-icon btn-sound" id="btn-sound" title="Выбрать звук отправки">
+                <i class="fas fa-music"></i>
+              </button>
+              <div class="sound-dropdown" id="sound-dropdown">
+                <div class="sound-dropdown-header">
+                  <i class="fas fa-music"></i> Звук отправки
+                </div>
+                <div class="sound-option active" data-sound="default">
+                  <i class="fas fa-bell"></i>
+                  <span>Обычный</span>
+                  <button class="btn-play" data-sound="default"><i class="fas fa-play"></i></button>
+                </div>
+                <div class="sound-option" data-sound="birthday">
+                  <i class="fas fa-birthday-cake"></i>
+                  <span>День рождения 🎂</span>
+                  <button class="btn-play" data-sound="birthday"><i class="fas fa-play"></i></button>
+                </div>
+                <div class="sound-option" data-sound="funny">
+                  <i class="fas fa-laugh-squint"></i>
+                  <span>Смешной 😂</span>
+                  <button class="btn-play" data-sound="funny"><i class="fas fa-play"></i></button>
+                </div>
+                <div class="sound-option" data-sound="urgent">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  <span>Срочно! 🚨</span>
+                  <button class="btn-play" data-sound="urgent"><i class="fas fa-play"></i></button>
+                </div>
+                <div class="sound-option" data-sound="romantic">
+                  <i class="fas fa-heart"></i>
+                  <span>Романтика ❤️</span>
+                  <button class="btn-play" data-sound="romantic"><i class="fas fa-play"></i></button>
+                </div>
+                <div class="sound-option" data-sound="applause">
+                  <i class="fas fa-hands-clapping"></i>
+                  <span>Аплодисменты 👏</span>
+                  <button class="btn-play" data-sound="applause"><i class="fas fa-play"></i></button>
+                </div>
+                <div class="sound-option" data-sound="none">
+                  <i class="fas fa-volume-mute"></i>
+                  <span>Без звука 🔇</span>
+                  <button class="btn-play" data-sound="none"><i class="fas fa-play"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Кнопка эмодзи -->
+            <button class="btn-icon" id="btn-emoji" title="Эмодзи">
+              <i class="fas fa-smile"></i>
+            </button>
+
+            <!-- Панель эмодзи -->
+            <div class="emoji-picker" id="emoji-picker" style="display: none;">
+              <div class="emoji-grid">
+                <!-- Заполняется через JS -->
+              </div>
+            </div>
+
+            <!-- Кнопка отправки -->
+            <button class="btn-send" id="btn-send" title="Отправить">
+              <i class="fas fa-paper-plane"></i>
+            </button>
+          </div>
+        </footer>
+      </main>
+
+      <!-- ПАНЕЛЬ ПОЛЬЗОВАТЕЛЕЙ (правая) -->
+      <aside class="users-panel" id="users-panel">
+        <div class="panel-header">
+          <h3>👥 Участники</h3>
+        </div>
+        <div class="users-list" id="users-list">
+          <!-- Заполняется через JS -->
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ========== МОДАЛЬНОЕ ОКНО СОЗДАНИЯ ГРУППЫ ========== -->
+  <div class="modal" id="modal-new-group" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3><i class="fas fa-users"></i> Создать группу</h3>
+        <button class="btn-icon" id="btn-close-modal">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group">
+          <i class="fas fa-edit"></i>
+          <input type="text" id="group-name-input" placeholder="Название группы">
+        </div>
+        <p class="modal-hint">Выберите участников:</p>
+        <div class="members-select" id="members-select">
+          <!-- Заполняется через JS -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="btn-cancel-group">Отмена</button>
+        <button class="btn-primary" id="btn-create-group">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== УВЕДОМЛЕНИЕ О ЗВУКЕ ========== -->
+  <div class="sound-notification" id="sound-notification" style="display: none;">
+    <div class="sound-notif-content">
+      <i class="fas fa-music"></i>
+      <span id="sound-notif-text">🎂 Праздничное сообщение!</span>
+    </div>
+  </div>
+
+  <!-- Скрипты -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
