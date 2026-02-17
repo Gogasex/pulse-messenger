@@ -218,12 +218,17 @@ io.on('connection', (socket) => {
     const room = rooms.get(data.room);
     if (!room) return;
 
-    // Очистить может только админ группы или любой в ЛС
-    if (room.type === 'group' && room.admin && room.admin !== user.username) {
-      socket.emit('error:message', { text: 'Только админ может очистить чат' });
-      return;
+    // Общий чат — любой может очистить
+    // Группа — только админ
+    // ЛС — любой из двух участников
+    if (room.type === 'group' && room.id !== 'general') {
+      if (room.admin && room.admin !== user.username) {
+        socket.emit('error:message', { text: 'Только админ может очистить чат' });
+        return;
+      }
     }
 
+    // Очищаем сообщения
     messages.set(data.room, []);
 
     const sysMsg = createMessage({
