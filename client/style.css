@@ -1166,3 +1166,65 @@ body {
     width: 100%;
   }
 }
+/* ============================================
+   НОВЫЕ СТИЛИ v1.1
+   ============================================ */
+
+/* Кнопка удаления сообщения */
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-delete-msg {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message:hover .btn-delete-msg {
+  opacity: 1;
+}
+
+.btn-delete-msg:hover {
+  background: var(--danger);
+  color: white;
+  opacity: 1;
+}
+
+/* Анимация удаления */
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(50px);
+    height: 0;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Кнопки управления чатом в хедере */
+.chat-actions .btn-danger {
+  color: var(--danger);
+}
+
+.chat-actions .btn-danger:hover {
+  background: rgba(255, 118, 117, 0.15);
+}

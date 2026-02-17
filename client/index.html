@@ -97,7 +97,15 @@
               <span class="chat-subtitle" id="chat-subtitle">Выберите чат для начала</span>
             </div>
           </div>
+
+          <!-- ✅ ОБНОВЛЁННЫЕ КНОПКИ -->
           <div class="chat-actions">
+            <button class="btn-icon" onclick="app.clearChat()" title="Очистить чат">
+              <i class="fas fa-broom"></i>
+            </button>
+            <button class="btn-icon btn-danger" onclick="app.deleteRoom()" title="Удалить группу">
+              <i class="fas fa-trash"></i>
+            </button>
             <button class="btn-icon" title="Голосовой звонок">
               <i class="fas fa-phone"></i>
             </button>
@@ -151,7 +159,7 @@
                         rows="1" maxlength="5000"></textarea>
             </div>
 
-            <!-- 🔊 КНОПКА ВЫБОРА ЗВУКА (УНИКАЛЬНАЯ ФИШКА!) -->
+            <!-- 🔊 КНОПКА ВЫБОРА ЗВУКА -->
             <div class="sound-selector" id="sound-selector">
               <button class="btn-icon btn-sound" id="btn-sound" title="Выбрать звук отправки">
                 <i class="fas fa-music"></i>

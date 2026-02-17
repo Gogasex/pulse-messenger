@@ -1,5 +1,6 @@
 // ============================================
-// PULSE MESSENGER — Клиентская логика
+// PULSE MESSENGER — Клиент v1.1
+// Исправлены баги + новые фичи
 // ============================================
 
 class PulseMessenger {
@@ -12,8 +13,8 @@ class PulseMessenger {
     this.typingTimeout = null;
     this.rooms = new Map();
     this.onlineUsers = [];
+    this.isJoiningRoom = false; // ← ФИКС мерцания
 
-    // Звуки отправки (уникальная фишка!)
     this.soundMap = {
       default:  { name: 'Обычный',        emoji: '🔔', color: '#6c5ce7' },
       birthday: { name: 'День рождения',  emoji: '🎂', color: '#fdcb6e' },
@@ -24,7 +25,6 @@ class PulseMessenger {
       none:     { name: 'Без звука',      emoji: '🔇', color: '#636e72' }
     };
 
-    // Эмодзи для пикера
     this.emojis = [
       '😀','😂','🤣','😊','😍','🥰','😘','😎',
       '🤔','😏','😢','😭','😡','🤯','🥳','🤩',
@@ -35,9 +35,7 @@ class PulseMessenger {
       '👀','💀','🗿','🐸','🦄','🐱','🐶','🦊'
     ];
 
-    // Генерация простых звуков через Web Audio API
     this.audioContext = null;
-
     this.init();
   }
 
@@ -54,7 +52,7 @@ class PulseMessenger {
   }
 
   // ============================================
-  // АУДИО — Генерация звуков (без файлов!)
+  // АУДИО
   // ============================================
   getAudioContext() {
     if (!this.audioContext) {
@@ -65,38 +63,37 @@ class PulseMessenger {
 
   playSound(soundType) {
     if (soundType === 'none') return;
-
-    const ctx = this.getAudioContext();
-
-    switch (soundType) {
-      case 'default':
-        this.playTone(ctx, [800], [0.1], 'sine');
-        break;
-      case 'birthday':
-        this.playMelody(ctx, [523, 523, 587, 523, 698, 659], [0.2, 0.2, 0.4, 0.4, 0.4, 0.8]);
-        break;
-      case 'funny':
-        this.playTone(ctx, [300, 600, 200, 800], [0.1, 0.1, 0.1, 0.15], 'square');
-        break;
-      case 'urgent':
-        this.playTone(ctx, [880, 0, 880, 0, 880], [0.15, 0.05, 0.15, 0.05, 0.3], 'sawtooth');
-        break;
-      case 'romantic':
-        this.playMelody(ctx, [523, 659, 784, 1047], [0.3, 0.3, 0.3, 0.6]);
-        break;
-      case 'applause':
-        this.playNoise(ctx, 1.0);
-        break;
+    try {
+      const ctx = this.getAudioContext();
+      switch (soundType) {
+        case 'default':
+          this.playTone(ctx, [800], [0.1], 'sine');
+          break;
+        case 'birthday':
+          this.playMelody(ctx, [523, 523, 587, 523, 698, 659], [0.2, 0.2, 0.4, 0.4, 0.4, 0.8]);
+          break;
+        case 'funny':
+          this.playTone(ctx, [300, 600, 200, 800], [0.1, 0.1, 0.1, 0.15], 'square');
+          break;
+        case 'urgent':
+          this.playTone(ctx, [880, 0, 880, 0, 880], [0.15, 0.05, 0.15, 0.05, 0.3], 'sawtooth');
+          break;
+        case 'romantic':
+          this.playMelody(ctx, [523, 659, 784, 1047], [0.3, 0.3, 0.3, 0.6]);
+          break;
+        case 'applause':
+          this.playNoise(ctx, 1.0);
+          break;
+      }
+    } catch (e) {
+      console.log('Audio error:', e);
     }
   }
 
   playTone(ctx, frequencies, durations, type = 'sine') {
     let startTime = ctx.currentTime;
     frequencies.forEach((freq, i) => {
-      if (freq === 0) {
-        startTime += durations[i];
-        return;
-      }
+      if (freq === 0) { startTime += durations[i]; return; }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = type;
@@ -146,7 +143,7 @@ class PulseMessenger {
   }
 
   // ============================================
-  // СОБЫТИЯ ВХОДА
+  // ВХОД
   // ============================================
   bindLoginEvents() {
     const form = document.getElementById('login-form');
@@ -154,66 +151,97 @@ class PulseMessenger {
       e.preventDefault();
       const username = document.getElementById('username-input').value.trim();
       const displayName = document.getElementById('displayname-input').value.trim();
-
       if (!username) return;
-
       this.connect(username, displayName || username);
     });
   }
 
   // ============================================
-  // ПОДКЛЮЧЕНИЕ К СЕРВЕРУ
+  // ПОДКЛЮЧЕНИЕ
   // ============================================
   connect(username, displayName) {
     this.socket = io(window.location.origin);
 
     this.socket.on('connect', () => {
-      console.log('🟢 Подключено к серверу');
-
-      this.socket.emit('user:join', {
-        username,
-        displayName
-      });
+      console.log('🟢 Подключено');
+      this.socket.emit('user:join', { username, displayName });
     });
 
     // Успешный вход
     this.socket.on('user:joined', (data) => {
       this.user = data.user;
+      this.onlineUsers = data.onlineUsers || [];
       this.showMainScreen();
       this.updateMyProfile();
 
-      // Загрузка комнат
       data.rooms.forEach(room => {
         this.rooms.set(room.id, room);
       });
       this.renderChatList();
+      this.renderUsersList();
 
-      // Загрузка сообщений
+      // Загрузка сообщений общего чата
       data.messages.forEach(msg => this.renderMessage(msg));
       this.scrollToBottom();
     });
 
     // Новое сообщение
     this.socket.on('message:new', (message) => {
-      this.renderMessage(message);
-      this.scrollToBottom();
-
-      // 🔊 ВОСПРОИЗВОДИМ ЗВУК ОТПРАВКИ!
-      if (message.sender.id !== this.socket.id && message.sendSound && message.sendSound !== 'default') {
-        this.playSound(message.sendSound);
-        this.showSoundNotification(message.sendSound);
-      } else if (message.sender.id !== this.socket.id) {
-        this.playSound('default');
+      if (message.room === this.currentRoom) {
+        this.renderMessage(message);
+        this.scrollToBottom();
       }
+
+      // Звук
+      if (message.sender.id !== this.socket.id && message.type !== 'system') {
+        if (message.sendSound && message.sendSound !== 'default' && message.sendSound !== 'none') {
+          this.playSound(message.sendSound);
+          this.showSoundNotification(message.sendSound);
+        } else if (message.sendSound !== 'none') {
+          this.playSound('default');
+        }
+      }
+
+      // Обновляем последнее сообщение в списке чатов
+      this.updateChatListLastMessage(message);
+    });
+
+    // Сообщение удалено
+    this.socket.on('message:deleted', (data) => {
+      if (data.room === this.currentRoom) {
+        const msgEl = document.querySelector(`[data-message-id="${data.messageId}"]`);
+        if (msgEl) {
+          msgEl.style.animation = 'fadeOut 0.3s ease';
+          setTimeout(() => msgEl.remove(), 300);
+        }
+      }
+    });
+
+    // Чат очищен
+    this.socket.on('chat:cleared', (data) => {
+      if (data.room === this.currentRoom) {
+        document.getElementById('messages-list').innerHTML = '';
+      }
+    });
+
+    // Группа удалена
+    this.socket.on('room:deleted', (data) => {
+      this.rooms.delete(data.roomId);
+      if (this.currentRoom === data.roomId) {
+        this.switchRoom('general');
+      }
+      this.renderChatList();
+      this.showNotification(`Группа "${data.roomName}" удалена`);
     });
 
     // Обновление пользователей
     this.socket.on('users:update', (users) => {
       this.onlineUsers = users;
       this.renderUsersList();
+      this.updateChatSubtitle();
     });
 
-    // Печатает...
+    // Печатает
     this.socket.on('typing:update', (data) => {
       if (data.room === this.currentRoom) {
         const indicator = document.getElementById('typing-indicator');
@@ -229,7 +257,9 @@ class PulseMessenger {
 
     // Реакции
     this.socket.on('message:reacted', (data) => {
-      this.updateMessageReactions(data.messageId, data.reactions);
+      if (data.room === this.currentRoom) {
+        this.updateMessageReactions(data.messageId, data.reactions);
+      }
     });
 
     // Новая комната
@@ -238,19 +268,36 @@ class PulseMessenger {
       this.renderChatList();
     });
 
-    // Присоединение к комнате
+    // Присоединение к комнате — ФИКС МЕРЦАНИЯ
     this.socket.on('room:joined', (data) => {
+      if (!this.isJoiningRoom) return; // Игнорируем если не мы инициировали
+
       this.rooms.set(data.room.id, data.room);
-      this.switchRoom(data.room.id);
+
+      // Очищаем и загружаем сообщения
+      document.getElementById('messages-list').innerHTML = '';
       data.messages.forEach(msg => this.renderMessage(msg));
+      this.scrollToBottom();
+
+      this.isJoiningRoom = false;
     });
 
-    // ЛС открыто
+    // ЛС
     this.socket.on('dm:opened', (data) => {
       this.rooms.set(data.room.id, data.room);
       this.renderChatList();
-      this.switchRoom(data.room.id);
+      this.currentRoom = data.room.id;
+      this.updateChatHeader(data.room);
+
+      document.getElementById('messages-list').innerHTML = '';
       data.messages.forEach(msg => this.renderMessage(msg));
+      this.scrollToBottom();
+      this.renderChatList();
+    });
+
+    // Ошибки
+    this.socket.on('error:message', (data) => {
+      this.showNotification(data.text, 'error');
     });
 
     this.socket.on('disconnect', () => {
@@ -278,7 +325,6 @@ class PulseMessenger {
     const input = document.getElementById('message-input');
     const sendBtn = document.getElementById('btn-send');
 
-    // Отправка по Enter
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -286,15 +332,11 @@ class PulseMessenger {
       }
     });
 
-    // Клик отправить
     sendBtn.addEventListener('click', () => this.sendMessage());
 
-    // Автовысота textarea
     input.addEventListener('input', () => {
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-
-      // Индикатор печати
       this.emitTyping();
     });
 
@@ -322,7 +364,7 @@ class PulseMessenger {
   }
 
   // ============================================
-  // ОТПРАВКА СООБЩЕНИЯ
+  // ОТПРАВКА
   // ============================================
   sendMessage() {
     const input = document.getElementById('message-input');
@@ -334,21 +376,57 @@ class PulseMessenger {
       type: this.pendingFile ? 'file' : 'text',
       content: content,
       room: this.currentRoom,
-      sendSound: this.selectedSound, // ✨ ЗВУК ОТПРАВКИ!
+      sendSound: this.selectedSound,
       replyTo: this.replyingTo,
       file: this.pendingFile || null
     };
 
     this.socket.emit('message:send', messageData);
 
-    // Очистка
     input.value = '';
     input.style.height = 'auto';
     this.pendingFile = null;
     this.cancelReply();
-
-    // Стоп печатание
     this.socket.emit('typing:stop', { room: this.currentRoom });
+  }
+
+  // ============================================
+  // УДАЛЕНИЕ СООБЩЕНИЯ
+  // ============================================
+  deleteMessage(messageId) {
+    if (!confirm('Удалить сообщение?')) return;
+
+    this.socket.emit('message:delete', {
+      messageId: messageId,
+      room: this.currentRoom
+    });
+  }
+
+  // ============================================
+  // ОЧИСТКА ЧАТА
+  // ============================================
+  clearChat() {
+    if (!confirm('Очистить всю историю чата?')) return;
+
+    this.socket.emit('chat:clear', {
+      room: this.currentRoom
+    });
+  }
+
+  // ============================================
+  // УДАЛЕНИЕ ГРУППЫ
+  // ============================================
+  deleteRoom() {
+    if (this.currentRoom === 'general') {
+      this.showNotification('Общий чат нельзя удалить', 'error');
+      return;
+    }
+
+    if (!confirm('Удалить эту группу? Это действие нельзя отменить!')) return;
+
+    this.socket.emit('room:delete', {
+      roomId: this.currentRoom
+    });
   }
 
   // ============================================
@@ -365,20 +443,18 @@ class PulseMessenger {
       return;
     }
 
-    const isOwn = message.sender.id === this.socket?.id;
-
+    const isOwn = message.sender.username === this.user?.username;
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${isOwn ? 'own' : ''}`;
     msgDiv.dataset.messageId = message.id;
 
-    // Аватар (только для чужих)
     const avatarHTML = isOwn ? '' : `
       <div class="avatar-small">
         ${message.sender.displayName?.charAt(0).toUpperCase() || '?'}
       </div>
     `;
 
-    // Бейдж звука
+    // Звук
     let soundBadgeHTML = '';
     if (message.sendSound && message.sendSound !== 'default' && message.sendSound !== 'none') {
       const soundInfo = this.soundMap[message.sendSound];
@@ -390,7 +466,7 @@ class PulseMessenger {
       `;
     }
 
-    // Файл / изображение
+    // Файл
     let fileHTML = '';
     if (message.file) {
       if (message.file.mimetype?.startsWith('image/')) {
@@ -424,14 +500,19 @@ class PulseMessenger {
       `;
     }
 
-    // Реакции
     const reactionsHTML = this.renderReactions(message.id, message.reactions);
 
-    // Время
     const time = new Date(message.timestamp).toLocaleTimeString('ru-RU', {
       hour: '2-digit',
       minute: '2-digit'
     });
+
+    // Кнопка удаления (только свои сообщения)
+    const deleteBtn = isOwn ? `
+      <button class="btn-delete-msg" onclick="app.deleteMessage('${message.id}')" title="Удалить">
+        <i class="fas fa-trash"></i>
+      </button>
+    ` : '';
 
     msgDiv.innerHTML = `
       ${avatarHTML}
@@ -442,9 +523,11 @@ class PulseMessenger {
         ${message.content ? `<div class="message-text">${this.escapeHTML(message.content)}</div>` : ''}
         ${fileHTML}
         ${reactionsHTML}
-        <div class="message-time">${time}</div>
+        <div class="message-footer">
+          <span class="message-time">${time}</span>
+          ${deleteBtn}
+        </div>
 
-        <!-- Быстрые реакции -->
         <div class="reaction-picker">
           <span onclick="app.react('${message.id}', '❤️')">❤️</span>
           <span onclick="app.react('${message.id}', '😂')">😂</span>
@@ -461,14 +544,12 @@ class PulseMessenger {
 
   renderReactions(messageId, reactions) {
     if (!reactions || Object.keys(reactions).length === 0) return '';
-
     let html = '<div class="message-reactions">';
     for (const [emoji, users] of Object.entries(reactions)) {
       const isOwn = users.includes(this.user?.username);
       html += `
         <div class="reaction ${isOwn ? 'own' : ''}" onclick="app.react('${messageId}', '${emoji}')">
-          ${emoji}
-          <span class="reaction-count">${users.length}</span>
+          ${emoji} <span class="reaction-count">${users.length}</span>
         </div>
       `;
     }
@@ -479,16 +560,14 @@ class PulseMessenger {
   updateMessageReactions(messageId, reactions) {
     const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!msgEl) return;
-
     const existingReactions = msgEl.querySelector('.message-reactions');
     const newReactionsHTML = this.renderReactions(messageId, reactions);
-
     if (existingReactions) {
       existingReactions.outerHTML = newReactionsHTML;
     } else {
       const bubble = msgEl.querySelector('.message-bubble');
-      const timeEl = bubble.querySelector('.message-time');
-      timeEl.insertAdjacentHTML('beforebegin', newReactionsHTML);
+      const footer = bubble.querySelector('.message-footer');
+      footer.insertAdjacentHTML('beforebegin', newReactionsHTML);
     }
   }
 
@@ -501,7 +580,7 @@ class PulseMessenger {
   }
 
   // ============================================
-  // СПИСОК ЧАТОВ
+  // СПИСОК ЧАТОВ — ФИКС МЕРЦАНИЯ
   // ============================================
   renderChatList() {
     const container = document.getElementById('chat-list');
@@ -511,18 +590,23 @@ class PulseMessenger {
       const item = document.createElement('div');
       item.className = `chat-item ${room.id === this.currentRoom ? 'active' : ''}`;
 
-      const icon = room.type === 'direct' ? 'fa-user' : 'fa-users';
-      const initial = room.name.replace(/[^\w\u0400-\u04FF]/g, '').charAt(0).toUpperCase() || '?';
+      const initial = room.name.replace(/[^\w\u0400-\u04FF]/g, '').charAt(0).toUpperCase() || '💬';
+
+      // Считаем онлайн участников
+      const onlineCount = this.getOnlineCountForRoom(room);
 
       item.innerHTML = `
         <div class="avatar-small">${initial}</div>
         <div class="chat-item-info">
           <div class="chat-item-name">${room.name}</div>
-          <div class="chat-item-last">${room.type === 'direct' ? 'Личные сообщения' : `${room.members.length} участников`}</div>
+          <div class="chat-item-last">
+            ${room.type === 'direct' ? 'Личные сообщения' : `👥 ${onlineCount} в сети`}
+          </div>
         </div>
       `;
 
       item.addEventListener('click', () => {
+        if (this.currentRoom === room.id) return; // ← ФИКС! Не переключаем если уже тут
         this.switchRoom(room.id);
       });
 
@@ -530,16 +614,21 @@ class PulseMessenger {
     });
   }
 
+  getOnlineCountForRoom(room) {
+    const onlineUsernames = this.onlineUsers.map(u => u.username);
+    return room.members.filter(m => onlineUsernames.includes(m)).length;
+  }
+
   switchRoom(roomId) {
+    if (this.isJoiningRoom) return; // ← ФИКС! Предотвращаем множественные переключения
+
     this.currentRoom = roomId;
+    this.isJoiningRoom = true;
+
     const room = this.rooms.get(roomId);
+    this.updateChatHeader(room);
 
-    // Обновляем заголовок
-    document.getElementById('chat-name').textContent = room?.name || 'Чат';
-    document.getElementById('chat-subtitle').textContent =
-      room?.type === 'direct' ? 'Личные сообщения' : `${room?.members?.length || 0} участников`;
-
-    // Очищаем и загружаем сообщения
+    // Очищаем сообщения
     document.getElementById('messages-list').innerHTML = '';
 
     // Присоединяемся к комнате
@@ -547,20 +636,59 @@ class PulseMessenger {
 
     // Обновляем список чатов
     this.renderChatList();
+
+    // Таймаут на случай если сервер не ответит
+    setTimeout(() => {
+      this.isJoiningRoom = false;
+    }, 3000);
+  }
+
+  updateChatHeader(room) {
+    if (!room) return;
+    document.getElementById('chat-name').textContent = room.name;
+    this.updateChatSubtitle();
+  }
+
+  updateChatSubtitle() {
+    const room = this.rooms.get(this.currentRoom);
+    if (!room) return;
+
+    const subtitle = document.getElementById('chat-subtitle');
+    if (room.type === 'direct') {
+      // Проверяем онлайн ли собеседник
+      const otherUser = room.members.find(m => m !== this.user?.username);
+      const isOnline = this.onlineUsers.some(u => u.username === otherUser);
+      subtitle.textContent = isOnline ? '🟢 В сети' : '⚫ Не в сети';
+    } else {
+      const onlineCount = this.getOnlineCountForRoom(room);
+      subtitle.textContent = `👥 ${onlineCount} из ${room.members.length} в сети`;
+    }
+  }
+
+  updateChatListLastMessage(message) {
+    // Обновляем превью последнего сообщения в списке чатов
+    this.renderChatList();
   }
 
   // ============================================
-  // СПИСОК ПОЛЬЗОВАТЕЛЕЙ
+  // СПИСОК ПОЛЬЗОВАТЕЛЕЙ (только онлайн!)
   // ============================================
   renderUsersList() {
     const container = document.getElementById('users-list');
     container.innerHTML = '';
+
+    // Заголовок с количеством
+    const header = document.querySelector('.panel-header h3');
+    if (header) {
+      header.textContent = `👥 В сети (${this.onlineUsers.length})`;
+    }
 
     this.onlineUsers.forEach((user) => {
       const item = document.createElement('div');
       item.className = 'user-item';
 
       const initial = user.displayName.charAt(0).toUpperCase();
+      const isMe = user.username === this.user?.username;
 
       item.innerHTML = `
         <div class="avatar-small" style="position: relative;">
@@ -568,17 +696,18 @@ class PulseMessenger {
           <div class="online-dot"></div>
         </div>
         <div class="user-item-info">
-          <div class="user-item-name">${user.displayName}</div>
-          <div class="user-item-status">${user.statusText || 'В сети'}</div>
+          <div class="user-item-name">${user.displayName} ${isMe ? '(вы)' : ''}</div>
+          <div class="user-item-status">${user.statusText || '🟢 В сети'}</div>
         </div>
       `;
 
-      // Клик — открыть ЛС
-      if (user.username !== this.user?.username) {
+      // Клик — ЛС (не с собой)
+      if (!isMe) {
         item.addEventListener('click', () => {
           this.socket.emit('dm:start', { username: user.username });
         });
         item.title = `Написать ${user.displayName}`;
+        item.style.cursor = 'pointer';
       }
 
       container.appendChild(item);
@@ -586,7 +715,7 @@ class PulseMessenger {
   }
 
   // ============================================
-  // 🔊 ЗВУК ОТПРАВКИ
+  // ЗВУК
   // ============================================
   bindSoundSelector() {
     const btn = document.getElementById('btn-sound');
@@ -597,39 +726,25 @@ class PulseMessenger {
       dropdown.classList.toggle('show');
     });
 
-    // Выбор звука
     document.querySelectorAll('.sound-option').forEach(option => {
       option.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-play')) return; // Не закрывать при прослушивании
-
+        if (e.target.closest('.btn-play')) return;
         const sound = option.dataset.sound;
         this.selectedSound = sound;
-
-        // Обновляем UI
         document.querySelectorAll('.sound-option').forEach(o => o.classList.remove('active'));
         option.classList.add('active');
-
-        // Кнопка меняет вид
-        if (sound !== 'default') {
-          btn.classList.add('has-sound');
-        } else {
-          btn.classList.remove('has-sound');
-        }
-
+        btn.classList.toggle('has-sound', sound !== 'default');
         dropdown.classList.remove('show');
       });
     });
 
-    // Кнопки прослушивания
-    document.querySelectorAll('.btn-play').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+    document.querySelectorAll('.btn-play').forEach(playBtn => {
+      playBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const sound = btn.dataset.sound;
-        this.playSound(sound);
+        this.playSound(playBtn.dataset.sound);
       });
     });
 
-    // Закрытие по клику снаружи
     document.addEventListener('click', () => {
       dropdown.classList.remove('show');
     });
@@ -641,13 +756,17 @@ class PulseMessenger {
 
     const notif = document.getElementById('sound-notification');
     const text = document.getElementById('sound-notif-text');
-
     text.textContent = `${soundInfo.emoji} ${soundInfo.name}!`;
     notif.style.display = 'block';
+    setTimeout(() => { notif.style.display = 'none'; }, 3000);
+  }
 
-    setTimeout(() => {
-      notif.style.display = 'none';
-    }, 3000);
+  showNotification(text, type = 'info') {
+    const notif = document.getElementById('sound-notification');
+    const notifText = document.getElementById('sound-notif-text');
+    notifText.textContent = text;
+    notif.style.display = 'block';
+    setTimeout(() => { notif.style.display = 'none'; }, 3000);
   }
 
   // ============================================
@@ -666,15 +785,12 @@ class PulseMessenger {
       picker.style.display = 'none';
     });
 
-    picker.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
+    picker.addEventListener('click', (e) => e.stopPropagation());
   }
 
   buildEmojiGrid() {
     const grid = document.querySelector('.emoji-grid');
     if (!grid) return;
-
     this.emojis.forEach(emoji => {
       const span = document.createElement('span');
       span.textContent = emoji;
@@ -704,14 +820,9 @@ class PulseMessenger {
       formData.append('file', file);
 
       try {
-        const response = await fetch('/upload', {
-          method: 'POST',
-          body: formData
-        });
-
+        const response = await fetch('/upload', { method: 'POST', body: formData });
         const fileInfo = await response.json();
 
-        // Отправляем сообщение с файлом
         this.socket.emit('message:send', {
           type: file.type.startsWith('image/') ? 'image' : 'file',
           content: '',
@@ -719,10 +830,9 @@ class PulseMessenger {
           sendSound: this.selectedSound,
           file: fileInfo
         });
-
       } catch (err) {
         console.error('Ошибка загрузки:', err);
-        alert('Ошибка загрузки файла');
+        this.showNotification('Ошибка загрузки файла', 'error');
       }
 
       fileInput.value = '';
@@ -735,11 +845,10 @@ class PulseMessenger {
   showGroupModal() {
     const modal = document.getElementById('modal-new-group');
     const membersContainer = document.getElementById('members-select');
-
     membersContainer.innerHTML = '';
+
     this.onlineUsers.forEach(user => {
       if (user.username === this.user?.username) return;
-
       const option = document.createElement('label');
       option.className = 'member-option';
       option.innerHTML = `
@@ -757,23 +866,22 @@ class PulseMessenger {
 
   createGroup() {
     const name = document.getElementById('group-name-input').value.trim();
-    if (!name) return alert('Введите название группы');
+    if (!name) {
+      this.showNotification('Введите название группы', 'error');
+      return;
+    }
 
     const checkboxes = document.querySelectorAll('#members-select input:checked');
     const members = Array.from(checkboxes).map(cb => cb.value);
 
-    this.socket.emit('room:create', {
-      name,
-      type: 'group',
-      members
-    });
+    this.socket.emit('room:create', { name, type: 'group', members });
 
     document.getElementById('modal-new-group').style.display = 'none';
     document.getElementById('group-name-input').value = '';
   }
 
   // ============================================
-  // ОТВЕТ НА СООБЩЕНИЕ
+  // ОТВЕТ
   // ============================================
   setReply(messageId, content) {
     this.replyingTo = { id: messageId, content };
@@ -788,13 +896,11 @@ class PulseMessenger {
   }
 
   // ============================================
-  // ПЕЧАТАЕТ...
+  // ПЕЧАТАЕТ
   // ============================================
   emitTyping() {
     if (!this.socket) return;
-
     this.socket.emit('typing:start', { room: this.currentRoom });
-
     clearTimeout(this.typingTimeout);
     this.typingTimeout = setTimeout(() => {
       this.socket.emit('typing:stop', { room: this.currentRoom });
@@ -806,9 +912,7 @@ class PulseMessenger {
   // ============================================
   scrollToBottom() {
     const container = document.getElementById('messages-container');
-    setTimeout(() => {
-      container.scrollTop = container.scrollHeight;
-    }, 50);
+    setTimeout(() => { container.scrollTop = container.scrollHeight; }, 50);
   }
 
   escapeHTML(text) {
@@ -825,6 +929,6 @@ class PulseMessenger {
 }
 
 // ============================================
-// ЗАПУСК!
+// ЗАПУСК
 // ============================================
 const app = new PulseMessenger();

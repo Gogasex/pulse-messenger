@@ -1,5 +1,6 @@
 // ============================================
-// PULSE MESSENGER — Серверная часть
+// PULSE MESSENGER — Серверная часть v1.1
+// Исправлены баги + новые фичи
 // ============================================
 
 require('dotenv').config();
@@ -19,7 +20,7 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  maxHttpBufferSize: 50 * 1024 * 1024 // 50MB для файлов
+  maxHttpBufferSize: 50 * 1024 * 1024
 });
 
 // ============================================
@@ -28,7 +29,6 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
-// Создаём папку для загрузок
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
@@ -41,7 +41,6 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client')));
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// Настройка загрузки файлов
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
@@ -52,18 +51,18 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB лимит
+  limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 // ============================================
-// ХРАНИЛИЩЕ (в памяти — потом заменим на БД)
+// ХРАНИЛИЩЕ
 // ============================================
-const users = new Map();          // socketId -> userInfo
-const rooms = new Map();          // roomId -> roomInfo
-const messages = new Map();       // roomId -> [messages]
-const userProfiles = new Map();   // username -> profile
+const users = new Map();
+const rooms = new Map();
+const messages = new Map();
+const userProfiles = new Map();
 
-// Общий чат по умолчанию
+// Общий чат
 rooms.set('general', {
   id: 'general',
   name: '💬 Общий чат',
@@ -74,7 +73,7 @@ rooms.set('general', {
 messages.set('general', []);
 
 // ============================================
-// ЗАГРУЗКА ФАЙЛОВ (REST API)
+// ЗАГРУЗКА ФАЙЛОВ
 // ============================================
 app.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
@@ -95,13 +94,13 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 // ============================================
-// SOCKET.IO — РЕАЛ-ТАЙМ ЛОГИКА
+// SOCKET.IO
 // ============================================
 io.on('connection', (socket) => {
   console.log(`🟢 Подключился: ${socket.id}`);
 
   // ----------------------------------------
-  // РЕГИСТРАЦИЯ / ВХОД
+  // ВХОД
   // ----------------------------------------
   socket.on('user:join', (userData) => {
     const user = {
@@ -130,10 +129,11 @@ io.on('connection', (socket) => {
       rooms: Array.from(rooms.values()).filter(r =>
         r.members.includes(user.username) || r.id === 'general'
       ),
-      messages: messages.get('general') || []
+      messages: messages.get('general') || [],
+      onlineUsers: getOnlineUsers()
     });
 
-    // Уведомляем всех
+    // Уведомляем всех об обновлении списка онлайн
     io.emit('users:update', getOnlineUsers());
 
     // Системное сообщение
@@ -156,7 +156,7 @@ io.on('connection', (socket) => {
     if (!user) return;
 
     const message = createMessage({
-      type: data.type || 'text',        // text, image, file, voice
+      type: data.type || 'text',
       content: data.content,
       room: data.room || 'general',
       sender: {
@@ -165,22 +165,108 @@ io.on('connection', (socket) => {
         displayName: user.displayName,
         avatar: user.avatar
       },
-      // ✨ УНИКАЛЬНАЯ ФИШКА — звук отправки!
       sendSound: data.sendSound || 'default',
       replyTo: data.replyTo || null,
       file: data.file || null
     });
 
-    // Сохраняем
     if (!messages.has(data.room)) {
       messages.set(data.room, []);
     }
     messages.get(data.room).push(message);
 
-    // Отправляем всем в комнате
     io.to(data.room).emit('message:new', message);
 
     console.log(`💬 ${user.displayName}: ${data.content?.substring(0, 50)}`);
+  });
+
+  // ----------------------------------------
+  // УДАЛЕНИЕ СООБЩЕНИЙ
+  // ----------------------------------------
+  socket.on('message:delete', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const roomMessages = messages.get(data.room);
+    if (!roomMessages) return;
+
+    const msgIndex = roomMessages.findIndex(m => m.id === data.messageId);
+    if (msgIndex === -1) return;
+
+    const message = roomMessages[msgIndex];
+
+    // Удалить может только автор сообщения
+    if (message.sender.username !== user.username) return;
+
+    roomMessages.splice(msgIndex, 1);
+
+    io.to(data.room).emit('message:deleted', {
+      messageId: data.messageId,
+      room: data.room
+    });
+
+    console.log(`🗑 ${user.displayName} удалил сообщение`);
+  });
+
+  // ----------------------------------------
+  // ОЧИСТКА ЧАТА
+  // ----------------------------------------
+  socket.on('chat:clear', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const room = rooms.get(data.room);
+    if (!room) return;
+
+    // Очистить может только админ группы или любой в ЛС
+    if (room.type === 'group' && room.admin && room.admin !== user.username) {
+      socket.emit('error:message', { text: 'Только админ может очистить чат' });
+      return;
+    }
+
+    messages.set(data.room, []);
+
+    const sysMsg = createMessage({
+      type: 'system',
+      content: `${user.displayName} очистил историю чата`,
+      room: data.room
+    });
+    messages.get(data.room).push(sysMsg);
+
+    io.to(data.room).emit('chat:cleared', { room: data.room });
+    io.to(data.room).emit('message:new', sysMsg);
+
+    console.log(`🧹 ${user.displayName} очистил чат ${room.name}`);
+  });
+
+  // ----------------------------------------
+  // УДАЛЕНИЕ ГРУППЫ
+  // ----------------------------------------
+  socket.on('room:delete', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const room = rooms.get(data.roomId);
+    if (!room) return;
+    if (room.id === 'general') return; // Общий чат нельзя удалить
+
+    // Удалить может только админ
+    if (room.admin && room.admin !== user.username) {
+      socket.emit('error:message', { text: 'Только админ может удалить группу' });
+      return;
+    }
+
+    // Уведомляем всех участников
+    io.to(data.roomId).emit('room:deleted', {
+      roomId: data.roomId,
+      roomName: room.name
+    });
+
+    // Удаляем
+    rooms.delete(data.roomId);
+    messages.delete(data.roomId);
+
+    console.log(`🗑 ${user.displayName} удалил группу "${room.name}"`);
   });
 
   // ----------------------------------------
@@ -196,7 +282,6 @@ io.on('connection', (socket) => {
     const message = roomMessages.find(m => m.id === data.messageId);
     if (!message) return;
 
-    // Добавляем/убираем реакцию
     if (!message.reactions) message.reactions = {};
     if (!message.reactions[data.emoji]) {
       message.reactions[data.emoji] = [];
@@ -243,7 +328,7 @@ io.on('connection', (socket) => {
   });
 
   // ----------------------------------------
-  // КОМНАТЫ / ГРУППЫ
+  // КОМНАТЫ
   // ----------------------------------------
   socket.on('room:create', (data) => {
     const user = users.get(socket.id);
@@ -253,7 +338,7 @@ io.on('connection', (socket) => {
     const room = {
       id: roomId,
       name: data.name,
-      type: data.type || 'group', // 'group' или 'direct'
+      type: data.type || 'group',
       members: [user.username, ...(data.members || [])],
       admin: user.username,
       createdAt: new Date()
@@ -262,7 +347,6 @@ io.on('connection', (socket) => {
     rooms.set(roomId, room);
     messages.set(roomId, []);
 
-    // Присоединяем всех участников
     room.members.forEach(memberUsername => {
       const memberSocket = findSocketByUsername(memberUsername);
       if (memberSocket) {
@@ -290,9 +374,13 @@ io.on('connection', (socket) => {
       room.members.push(user.username);
     }
 
+    // Отправляем сообщения И список онлайн участников комнаты
+    const roomOnline = getRoomOnlineUsers(data.roomId);
+
     socket.emit('room:joined', {
       room,
-      messages: messages.get(data.roomId) || []
+      messages: messages.get(data.roomId) || [],
+      onlineUsers: roomOnline
     });
   });
 
@@ -303,7 +391,6 @@ io.on('connection', (socket) => {
     const user = users.get(socket.id);
     if (!user) return;
 
-    // Проверяем, есть ли уже ЛС между этими пользователями
     let existingRoom = null;
     rooms.forEach((room) => {
       if (room.type === 'direct' &&
@@ -321,7 +408,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Создаём новую комнату для ЛС
     const roomId = uuidv4();
     const targetProfile = userProfiles.get(data.username);
     const room = {
@@ -346,7 +432,7 @@ io.on('connection', (socket) => {
   });
 
   // ----------------------------------------
-  // СТАТУС ПОЛЬЗОВАТЕЛЯ
+  // СТАТУС
   // ----------------------------------------
   socket.on('user:status', (data) => {
     const user = users.get(socket.id);
@@ -366,6 +452,15 @@ io.on('connection', (socket) => {
     if (user) {
       console.log(`🔴 ${user.displayName} вышел`);
 
+      // Убираем из списка участников общего чата
+      const generalRoom = rooms.get('general');
+      if (generalRoom) {
+        const memberIndex = generalRoom.members.indexOf(user.username);
+        if (memberIndex > -1) {
+          generalRoom.members.splice(memberIndex, 1);
+        }
+      }
+
       const sysMsg = createMessage({
         type: 'system',
         content: `${user.displayName} покинул чат`,
@@ -374,7 +469,11 @@ io.on('connection', (socket) => {
       messages.get('general')?.push(sysMsg);
       io.to('general').emit('message:new', sysMsg);
 
+      // Удаляем из профилей
+      userProfiles.delete(user.username);
       users.delete(socket.id);
+
+      // Обновляем список онлайн
       io.emit('users:update', getOnlineUsers());
     }
   });
@@ -409,6 +508,24 @@ function getOnlineUsers() {
   }));
 }
 
+function getRoomOnlineUsers(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return [];
+
+  const onlineUsernames = Array.from(users.values()).map(u => u.username);
+
+  return room.members
+    .filter(member => onlineUsernames.includes(member))
+    .map(member => {
+      const profile = userProfiles.get(member);
+      return {
+        username: member,
+        displayName: profile?.displayName || member,
+        status: 'online'
+      };
+    });
+}
+
 function findSocketByUsername(username) {
   for (const [socketId, user] of users) {
     if (user.username === username) {
@@ -424,7 +541,7 @@ function findSocketByUsername(username) {
 server.listen(PORT, () => {
   console.log(`
   ╔══════════════════════════════════════╗
-  ║     🚀 PULSE MESSENGER SERVER       ║
+  ║     🚀 PULSE MESSENGER v1.1        ║
   ║     Запущен на порту ${PORT}           ║
   ║     http://localhost:${PORT}           ║
   ╚══════════════════════════════════════╝
