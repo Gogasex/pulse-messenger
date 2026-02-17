@@ -1,6 +1,9 @@
 // ============================================
-// PULSE MESSENGER — Серверная часть v1.1
-// Исправлены баги + новые фичи
+// PULSE MESSENGER — Серверная часть v1.2
+// + Прочитано/непрочитано
+// + Голосовые сообщения
+// + Уведомления
+// + Поиск
 // ============================================
 
 require('dotenv').config();
@@ -23,9 +26,6 @@ const io = new Server(server, {
   maxHttpBufferSize: 50 * 1024 * 1024
 });
 
-// ============================================
-// НАСТРОЙКИ
-// ============================================
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
@@ -33,9 +33,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// ============================================
-// MIDDLEWARE
-// ============================================
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client')));
@@ -61,8 +58,8 @@ const users = new Map();
 const rooms = new Map();
 const messages = new Map();
 const userProfiles = new Map();
+const unreadCounts = new Map(); // username -> { roomId: count }
 
-// Общий чат
 rooms.set('general', {
   id: 'general',
   name: '💬 Общий чат',
@@ -108,35 +105,43 @@ io.on('connection', (socket) => {
       username: userData.username,
       displayName: userData.displayName || userData.username,
       avatar: userData.avatar || null,
+      avatarColor: userData.avatarColor || getRandomColor(),
+      bio: userData.bio || '',
       status: 'online',
       statusText: userData.statusText || '',
+      lastSeen: new Date(),
       joinedAt: new Date()
     };
 
     users.set(socket.id, user);
     userProfiles.set(user.username, user);
 
-    // Присоединяем к общему чату
+    // Инициализируем счётчик непрочитанных
+    if (!unreadCounts.has(user.username)) {
+      unreadCounts.set(user.username, {});
+    }
+
     socket.join('general');
     const generalRoom = rooms.get('general');
     if (!generalRoom.members.includes(user.username)) {
       generalRoom.members.push(user.username);
     }
 
-    // Отправляем данные пользователю
+    // Собираем данные о непрочитанных
+    const userUnread = unreadCounts.get(user.username) || {};
+
     socket.emit('user:joined', {
       user,
       rooms: Array.from(rooms.values()).filter(r =>
         r.members.includes(user.username) || r.id === 'general'
       ),
       messages: messages.get('general') || [],
-      onlineUsers: getOnlineUsers()
+      onlineUsers: getOnlineUsers(),
+      unreadCounts: userUnread
     });
 
-    // Уведомляем всех об обновлении списка онлайн
     io.emit('users:update', getOnlineUsers());
 
-    // Системное сообщение
     const sysMsg = createMessage({
       type: 'system',
       content: `${user.displayName} присоединился к чату`,
@@ -145,7 +150,7 @@ io.on('connection', (socket) => {
     messages.get('general').push(sysMsg);
     io.to('general').emit('message:new', sysMsg);
 
-    console.log(`👤 ${user.displayName} вошёл в чат`);
+    console.log(`👤 ${user.displayName} вошёл`);
   });
 
   // ----------------------------------------
@@ -163,11 +168,13 @@ io.on('connection', (socket) => {
         id: user.id,
         username: user.username,
         displayName: user.displayName,
-        avatar: user.avatar
+        avatar: user.avatar,
+        avatarColor: user.avatarColor
       },
       sendSound: data.sendSound || 'default',
       replyTo: data.replyTo || null,
-      file: data.file || null
+      file: data.file || null,
+      duration: data.duration || null // Для голосовых
     });
 
     if (!messages.has(data.room)) {
@@ -175,9 +182,64 @@ io.on('connection', (socket) => {
     }
     messages.get(data.room).push(message);
 
-    io.to(data.room).emit('message:new', message);
+    // Увеличиваем счётчик непрочитанных для всех кроме отправителя
+    const room = rooms.get(data.room);
+    if (room) {
+      room.members.forEach(memberUsername => {
+        if (memberUsername !== user.username) {
+          if (!unreadCounts.has(memberUsername)) {
+            unreadCounts.set(memberUsername, {});
+          }
+          const counts = unreadCounts.get(memberUsername);
+          counts[data.room] = (counts[data.room] || 0) + 1;
 
+          // Отправляем обновление счётчика конкретному пользователю
+          const memberSocket = findSocketByUsername(memberUsername);
+          if (memberSocket) {
+            memberSocket.emit('unread:update', {
+              room: data.room,
+              count: counts[data.room]
+            });
+          }
+        }
+      });
+    }
+
+    io.to(data.room).emit('message:new', message);
     console.log(`💬 ${user.displayName}: ${data.content?.substring(0, 50)}`);
+  });
+
+  // ----------------------------------------
+  // ПРОЧИТАНО
+  // ----------------------------------------
+  socket.on('messages:read', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    // Сбрасываем счётчик непрочитанных
+    const counts = unreadCounts.get(user.username);
+    if (counts) {
+      counts[data.room] = 0;
+    }
+
+    // Помечаем сообщения как прочитанные
+    const roomMessages = messages.get(data.room);
+    if (roomMessages) {
+      roomMessages.forEach(msg => {
+        if (msg.sender.username !== user.username && !msg.readBy) {
+          msg.readBy = [];
+        }
+        if (msg.readBy && !msg.readBy.includes(user.username)) {
+          msg.readBy.push(user.username);
+        }
+      });
+
+      // Уведомляем отправителей что их сообщения прочитаны
+      socket.to(data.room).emit('messages:were-read', {
+        room: data.room,
+        readBy: user.username
+      });
+    }
   });
 
   // ----------------------------------------
@@ -194,8 +256,6 @@ io.on('connection', (socket) => {
     if (msgIndex === -1) return;
 
     const message = roomMessages[msgIndex];
-
-    // Удалить может только автор сообщения
     if (message.sender.username !== user.username) return;
 
     roomMessages.splice(msgIndex, 1);
@@ -218,9 +278,6 @@ io.on('connection', (socket) => {
     const room = rooms.get(data.room);
     if (!room) return;
 
-    // Общий чат — любой может очистить
-    // Группа — только админ
-    // ЛС — любой из двух участников
     if (room.type === 'group' && room.id !== 'general') {
       if (room.admin && room.admin !== user.username) {
         socket.emit('error:message', { text: 'Только админ может очистить чат' });
@@ -228,8 +285,15 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Очищаем сообщения
     messages.set(data.room, []);
+
+    // Сбрасываем непрочитанные для всех
+    room.members.forEach(memberUsername => {
+      const counts = unreadCounts.get(memberUsername);
+      if (counts) {
+        counts[data.room] = 0;
+      }
+    });
 
     const sysMsg = createMessage({
       type: 'system',
@@ -253,21 +317,18 @@ io.on('connection', (socket) => {
 
     const room = rooms.get(data.roomId);
     if (!room) return;
-    if (room.id === 'general') return; // Общий чат нельзя удалить
+    if (room.id === 'general') return;
 
-    // Удалить может только админ
     if (room.admin && room.admin !== user.username) {
       socket.emit('error:message', { text: 'Только админ может удалить группу' });
       return;
     }
 
-    // Уведомляем всех участников
     io.to(data.roomId).emit('room:deleted', {
       roomId: data.roomId,
       roomName: room.name
     });
 
-    // Удаляем
     rooms.delete(data.roomId);
     messages.delete(data.roomId);
 
@@ -310,7 +371,7 @@ io.on('connection', (socket) => {
   });
 
   // ----------------------------------------
-  // ПЕЧАТАЕТ...
+  // ПЕЧАТАЕТ
   // ----------------------------------------
   socket.on('typing:start', (data) => {
     const user = users.get(socket.id);
@@ -330,6 +391,85 @@ io.on('connection', (socket) => {
       room: data.room,
       isTyping: false
     });
+  });
+
+  // ----------------------------------------
+  // ПОИСК СООБЩЕНИЙ
+  // ----------------------------------------
+  socket.on('messages:search', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const query = data.query.toLowerCase().trim();
+    if (!query) {
+      socket.emit('messages:search-results', { results: [], query: '' });
+      return;
+    }
+
+    const results = [];
+
+    // Ищем по всем комнатам где пользователь состоит
+    rooms.forEach((room) => {
+      if (!room.members.includes(user.username) && room.id !== 'general') return;
+
+      const roomMessages = messages.get(room.id) || [];
+      roomMessages.forEach(msg => {
+        if (msg.type === 'system') return;
+        if (msg.content && msg.content.toLowerCase().includes(query)) {
+          results.push({
+            ...msg,
+            roomName: room.name,
+            roomId: room.id
+          });
+        }
+      });
+    });
+
+    // Сортируем по дате (новые первые)
+    results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    socket.emit('messages:search-results', {
+      results: results.slice(0, 50), // Максимум 50 результатов
+      query: data.query
+    });
+  });
+
+  // ----------------------------------------
+  // ПРОФИЛЬ
+  // ----------------------------------------
+  socket.on('profile:update', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    if (data.displayName) user.displayName = data.displayName;
+    if (data.bio !== undefined) user.bio = data.bio;
+    if (data.statusText !== undefined) user.statusText = data.statusText;
+    if (data.avatarColor) user.avatarColor = data.avatarColor;
+    if (data.avatar !== undefined) user.avatar = data.avatar;
+
+    userProfiles.set(user.username, user);
+
+    io.emit('users:update', getOnlineUsers());
+    socket.emit('profile:updated', user);
+
+    console.log(`👤 ${user.displayName} обновил профиль`);
+  });
+
+  socket.on('profile:get', (data) => {
+    const profile = userProfiles.get(data.username);
+    if (profile) {
+      socket.emit('profile:data', {
+        username: profile.username,
+        displayName: profile.displayName,
+        avatar: profile.avatar,
+        avatarColor: profile.avatarColor,
+        bio: profile.bio,
+        status: profile.status,
+        statusText: profile.statusText,
+        lastSeen: profile.lastSeen,
+        joinedAt: profile.joinedAt
+      });
+    }
   });
 
   // ----------------------------------------
@@ -379,7 +519,6 @@ io.on('connection', (socket) => {
       room.members.push(user.username);
     }
 
-    // Отправляем сообщения И список онлайн участников комнаты
     const roomOnline = getRoomOnlineUsers(data.roomId);
 
     socket.emit('room:joined', {
@@ -390,7 +529,7 @@ io.on('connection', (socket) => {
   });
 
   // ----------------------------------------
-  // ЛИЧНЫЕ СООБЩЕНИЯ
+  // ЛС
   // ----------------------------------------
   socket.on('dm:start', (data) => {
     const user = users.get(socket.id);
@@ -457,7 +596,10 @@ io.on('connection', (socket) => {
     if (user) {
       console.log(`🔴 ${user.displayName} вышел`);
 
-      // Убираем из списка участников общего чата
+      user.lastSeen = new Date();
+      user.status = 'offline';
+      userProfiles.set(user.username, user);
+
       const generalRoom = rooms.get('general');
       if (generalRoom) {
         const memberIndex = generalRoom.members.indexOf(user.username);
@@ -474,18 +616,14 @@ io.on('connection', (socket) => {
       messages.get('general')?.push(sysMsg);
       io.to('general').emit('message:new', sysMsg);
 
-      // Удаляем из профилей
-      userProfiles.delete(user.username);
       users.delete(socket.id);
-
-      // Обновляем список онлайн
       io.emit('users:update', getOnlineUsers());
     }
   });
 });
 
 // ============================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ФУНКЦИИ
 // ============================================
 function createMessage(data) {
   return {
@@ -497,9 +635,10 @@ function createMessage(data) {
     sendSound: data.sendSound || null,
     replyTo: data.replyTo || null,
     file: data.file || null,
+    duration: data.duration || null,
     reactions: {},
-    timestamp: new Date(),
-    read: false
+    readBy: [],
+    timestamp: new Date()
   };
 }
 
@@ -508,8 +647,11 @@ function getOnlineUsers() {
     username: u.username,
     displayName: u.displayName,
     avatar: u.avatar,
+    avatarColor: u.avatarColor,
+    bio: u.bio,
     status: u.status,
-    statusText: u.statusText
+    statusText: u.statusText,
+    lastSeen: u.lastSeen
   }));
 }
 
@@ -526,6 +668,7 @@ function getRoomOnlineUsers(roomId) {
       return {
         username: member,
         displayName: profile?.displayName || member,
+        avatarColor: profile?.avatarColor,
         status: 'online'
       };
     });
@@ -540,13 +683,22 @@ function findSocketByUsername(username) {
   return null;
 }
 
+function getRandomColor() {
+  const colors = [
+    '#6c5ce7', '#00cec9', '#e17055', '#00b894',
+    '#fdcb6e', '#ff7675', '#a29bfe', '#55efc4',
+    '#fab1a0', '#74b9ff', '#fd79a8', '#636e72'
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
 // ============================================
 // ЗАПУСК
 // ============================================
 server.listen(PORT, () => {
   console.log(`
   ╔══════════════════════════════════════╗
-  ║     🚀 PULSE MESSENGER v1.1        ║
+  ║     🚀 PULSE MESSENGER v1.2        ║
   ║     Запущен на порту ${PORT}           ║
   ║     http://localhost:${PORT}           ║
   ╚══════════════════════════════════════╝

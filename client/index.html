@@ -59,18 +59,29 @@
         <!-- Поиск -->
         <div class="search-bar">
           <i class="fas fa-search"></i>
-          <input type="text" id="search-input" placeholder="Поиск...">
+          <input type="text" id="search-input" placeholder="Поиск сообщений...">
+        </div>
+
+        <!-- Результаты поиска -->
+        <div class="search-results" id="search-results" style="display: none;">
+          <div class="search-results-header">
+            <span>Результаты поиска</span>
+            <button class="btn-icon btn-small" id="btn-close-search">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="search-results-list" id="search-results-list">
+          </div>
         </div>
 
         <!-- Список чатов -->
         <div class="chat-list" id="chat-list">
-          <!-- Заполняется через JS -->
         </div>
 
-        <!-- Профиль пользователя внизу -->
+        <!-- Профиль пользователя -->
         <div class="sidebar-footer">
-          <div class="user-profile" id="user-profile">
-            <div class="avatar-small" id="my-avatar">
+          <div class="user-profile" id="user-profile" onclick="app.showMyProfile()">
+            <div class="avatar-small" id="my-avatar" style="cursor:pointer;">
               <i class="fas fa-user"></i>
             </div>
             <div class="user-info">
@@ -84,21 +95,19 @@
         </div>
       </aside>
 
-      <!-- ОСНОВНАЯ ОБЛАСТЬ ЧАТА -->
+      <!-- ОБЛАСТЬ ЧАТА -->
       <main class="chat-area">
-        <!-- Заголовок чата -->
         <header class="chat-header" id="chat-header">
           <div class="chat-info">
-            <div class="avatar-medium">
+            <div class="avatar-medium" id="chat-avatar">
               <i class="fas fa-comments"></i>
             </div>
             <div>
               <h3 id="chat-name">💬 Общий чат</h3>
-              <span class="chat-subtitle" id="chat-subtitle">Выберите чат для начала</span>
+              <span class="chat-subtitle" id="chat-subtitle">Выберите чат</span>
             </div>
           </div>
 
-          <!-- ✅ ОБНОВЛЁННЫЕ КНОПКИ -->
           <div class="chat-actions">
             <button class="btn-icon" onclick="app.clearChat()" title="Очистить чат">
               <i class="fas fa-broom"></i>
@@ -121,7 +130,6 @@
         <!-- Сообщения -->
         <div class="messages-container" id="messages-container">
           <div class="messages-list" id="messages-list">
-            <!-- Сообщения заполняются через JS -->
           </div>
         </div>
 
@@ -135,7 +143,6 @@
 
         <!-- Панель ввода -->
         <footer class="message-input-area">
-          <!-- Превью ответа -->
           <div class="reply-preview" id="reply-preview" style="display: none;">
             <div class="reply-content">
               <i class="fas fa-reply"></i>
@@ -147,19 +154,33 @@
           </div>
 
           <div class="input-row">
-            <!-- Кнопка прикрепить файл -->
             <button class="btn-icon" id="btn-attach" title="Прикрепить файл">
               <i class="fas fa-paperclip"></i>
             </button>
             <input type="file" id="file-input" hidden multiple>
 
-            <!-- Поле ввода -->
+            <!-- Кнопка голосового сообщения -->
+            <button class="btn-icon" id="btn-voice" title="Голосовое сообщение">
+              <i class="fas fa-microphone"></i>
+            </button>
+
             <div class="message-input-wrapper">
               <textarea id="message-input" placeholder="Напишите сообщение..."
                         rows="1" maxlength="5000"></textarea>
             </div>
 
-            <!-- 🔊 КНОПКА ВЫБОРА ЗВУКА -->
+            <!-- Индикатор записи голоса -->
+            <div class="voice-recording" id="voice-recording" style="display: none;">
+              <div class="recording-dot"></div>
+              <span class="recording-time" id="recording-time">0:00</span>
+              <button class="btn-icon btn-danger" id="btn-cancel-voice" title="Отменить">
+                <i class="fas fa-times"></i>
+              </button>
+              <button class="btn-icon btn-success" id="btn-send-voice" title="Отправить">
+                <i class="fas fa-check"></i>
+              </button>
+            </div>
+
             <div class="sound-selector" id="sound-selector">
               <button class="btn-icon btn-sound" id="btn-sound" title="Выбрать звук отправки">
                 <i class="fas fa-music"></i>
@@ -206,19 +227,15 @@
               </div>
             </div>
 
-            <!-- Кнопка эмодзи -->
             <button class="btn-icon" id="btn-emoji" title="Эмодзи">
               <i class="fas fa-smile"></i>
             </button>
 
-            <!-- Панель эмодзи -->
             <div class="emoji-picker" id="emoji-picker" style="display: none;">
               <div class="emoji-grid">
-                <!-- Заполняется через JS -->
               </div>
             </div>
 
-            <!-- Кнопка отправки -->
             <button class="btn-send" id="btn-send" title="Отправить">
               <i class="fas fa-paper-plane"></i>
             </button>
@@ -226,19 +243,18 @@
         </footer>
       </main>
 
-      <!-- ПАНЕЛЬ ПОЛЬЗОВАТЕЛЕЙ (правая) -->
+      <!-- ПАНЕЛЬ ПОЛЬЗОВАТЕЛЕЙ -->
       <aside class="users-panel" id="users-panel">
         <div class="panel-header">
           <h3>👥 Участники</h3>
         </div>
         <div class="users-list" id="users-list">
-          <!-- Заполняется через JS -->
         </div>
       </aside>
     </div>
   </div>
 
-  <!-- ========== МОДАЛЬНОЕ ОКНО СОЗДАНИЯ ГРУППЫ ========== -->
+  <!-- МОДАЛЬНОЕ ОКНО ГРУППЫ -->
   <div class="modal" id="modal-new-group" style="display: none;">
     <div class="modal-content">
       <div class="modal-header">
@@ -254,7 +270,6 @@
         </div>
         <p class="modal-hint">Выберите участников:</p>
         <div class="members-select" id="members-select">
-          <!-- Заполняется через JS -->
         </div>
       </div>
       <div class="modal-footer">
@@ -264,7 +279,83 @@
     </div>
   </div>
 
-  <!-- ========== УВЕДОМЛЕНИЕ О ЗВУКЕ ========== -->
+  <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
+  <div class="modal" id="modal-profile" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3><i class="fas fa-user-circle"></i> Профиль</h3>
+        <button class="btn-icon" onclick="document.getElementById('modal-profile').style.display='none'">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body profile-modal-body">
+        <div class="profile-avatar-large" id="profile-avatar-large">
+          A
+        </div>
+        <div class="profile-color-picker">
+          <span class="color-dot" style="background:#6c5ce7" onclick="app.setAvatarColor('#6c5ce7')"></span>
+          <span class="color-dot" style="background:#00cec9" onclick="app.setAvatarColor('#00cec9')"></span>
+          <span class="color-dot" style="background:#e17055" onclick="app.setAvatarColor('#e17055')"></span>
+          <span class="color-dot" style="background:#00b894" onclick="app.setAvatarColor('#00b894')"></span>
+          <span class="color-dot" style="background:#fdcb6e" onclick="app.setAvatarColor('#fdcb6e')"></span>
+          <span class="color-dot" style="background:#ff7675" onclick="app.setAvatarColor('#ff7675')"></span>
+          <span class="color-dot" style="background:#a29bfe" onclick="app.setAvatarColor('#a29bfe')"></span>
+          <span class="color-dot" style="background:#fd79a8" onclick="app.setAvatarColor('#fd79a8')"></span>
+          <span class="color-dot" style="background:#74b9ff" onclick="app.setAvatarColor('#74b9ff')"></span>
+          <span class="color-dot" style="background:#55efc4" onclick="app.setAvatarColor('#55efc4')"></span>
+        </div>
+        <div class="input-group">
+          <i class="fas fa-user"></i>
+          <input type="text" id="profile-displayname" placeholder="Отображаемое имя">
+        </div>
+        <div class="input-group">
+          <i class="fas fa-comment"></i>
+          <input type="text" id="profile-status" placeholder="Статус (например: На работе 💼)">
+        </div>
+        <div class="input-group">
+          <i class="fas fa-info-circle"></i>
+          <input type="text" id="profile-bio" placeholder="О себе" maxlength="150">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('modal-profile').style.display='none'">Отмена</button>
+        <button class="btn-primary" onclick="app.saveProfile()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО ПРОСМОТРА ПРОФИЛЯ -->
+  <div class="modal" id="modal-view-profile" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3><i class="fas fa-user"></i> Профиль пользователя</h3>
+        <button class="btn-icon" onclick="document.getElementById('modal-view-profile').style.display='none'">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body profile-modal-body">
+        <div class="profile-avatar-large" id="view-profile-avatar">?</div>
+        <h2 id="view-profile-name">Пользователь</h2>
+        <p class="profile-username" id="view-profile-username">@username</p>
+        <p class="profile-bio-text" id="view-profile-bio">-</p>
+        <div class="profile-info-row">
+          <i class="fas fa-circle" style="color: var(--success); font-size: 8px;"></i>
+          <span id="view-profile-status">В сети</span>
+        </div>
+        <div class="profile-info-row">
+          <i class="fas fa-calendar"></i>
+          <span id="view-profile-joined">Присоединился: —</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="btn-dm-from-profile" onclick="document.getElementById('modal-view-profile').style.display='none'">
+          <i class="fas fa-comment"></i> Написать
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- УВЕДОМЛЕНИЕ -->
   <div class="sound-notification" id="sound-notification" style="display: none;">
     <div class="sound-notif-content">
       <i class="fas fa-music"></i>
@@ -272,7 +363,6 @@
     </div>
   </div>
 
-  <!-- Скрипты -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
   <script src="app.js"></script>
 </body>
